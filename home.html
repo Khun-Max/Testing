@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Todo List — Simple App</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#06b6d4; --success:#10b981; --danger:#ef4444; --glass: rgba(255,255,255,0.03);
+      color-scheme: dark;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;color: #e6eef6;background:linear-gradient(180deg,#071226 0%, #0a1622 100%);}
+    .app{max-width:900px;margin:36px auto;padding:20px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.6);}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:4px 0 18px;color:var(--muted);font-size:13px}
+
+    .new-item{display:flex;gap:8px;align-items:center}
+    .new-item input[type=text]{flex:1;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit;font-size:14px}
+    .new-item input[type=date]{padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    .btn{padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:600}
+    .btn-primary{background:var(--accent);color:#062024}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+
+    .controls{display:flex;gap:8px;align-items:center;margin-top:12px;margin-bottom:12px}
+    .filters{display:flex;gap:8px}
+    .filter-btn{padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:var(--muted);cursor:pointer}
+    .filter-btn.active{background:rgba(255,255,255,0.03);color:var(--accent)}
+
+    .list{margin-top:16px}
+    .todo{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));border:1px solid rgba(255,255,255,0.02)}
+    .todo .content{flex:1;display:flex;flex-direction:column}
+    .todo .title{font-size:15px}
+    .todo.completed .title{text-decoration:line-through;opacity:0.6}
+    .meta{font-size:12px;color:var(--muted);margin-top:6px}
+
+    .todo .actions{display:flex;gap:8px;align-items:center}
+    .icon-btn{background:transparent;border:0;padding:6px;border-radius:8px;cursor:pointer;color:var(--muted)}
+    .icon-btn:hover{background:rgba(255,255,255,0.02);color:inherit}
+
+    .empty{padding:28px;text-align:center;color:var(--muted)}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:16px;color:var(--muted);font-size:13px}
+
+    /* editing */
+    .edit-input{width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+
+    /* small screens */
+    @media (max-width:520px){.new-item{flex-direction:column;align-items:stretch}.controls{flex-direction:column;align-items:stretch}.filters{justify-content:flex-start}}
+  </style>
+</head>
+<body>
+  <main class="app" role="main">
+    <header>
+      <div>
+        <h1>Todo list</h1>
+        <p class="lead">Add tasks, mark done, edit, reorder and save locally (LocalStorage).</p>
+      </div>
+    </header>
+
+    <section aria-label="Create task" style="margin-top:8px">
+      <form id="addForm" class="new-item" novalidate>
+        <input id="newTitle" type="text" placeholder="What needs to be done?" aria-label="New todo title" required />
+        <input id="newDue" type="date" aria-label="Due date (optional)" />
+        <button class="btn btn-primary" type="submit">Add</button>
+      </form>
+
+      <div class="controls">
+        <div class="filters" role="tablist" aria-label="Filter todos">
+          <button class="filter-btn active" data-filter="all" role="tab">All</button>
+          <button class="filter-btn" data-filter="active" role="tab">Active</button>
+          <button class="filter-btn" data-filter="completed" role="tab">Completed</button>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button id="clearCompleted" class="btn btn-ghost" title="Clear completed">Clear completed</button>
+          <button id="sortBtn" class="btn btn-ghost" title="Sort: newest/oldest">Sort</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="list" id="list" aria-live="polite"></section>
+
+    <div class="footer">
+      <div id="count">0 tasks</div>
+      <div>Tip: double-click a task to edit it. Drag to reorder.</div>
+    </div>
+  </main>
+
+  <template id="todoTemplate">
+    <div class="todo" draggable="true">
+      <input type="checkbox" class="toggle" aria-label="Mark complete" />
+      <div class="content">
+        <div class="title"></div>
+        <div class="meta"></div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn editBtn" title="Edit">✏️</button>
+        <button class="icon-btn deleteBtn" title="Delete">🗑️</button>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // Simple todo app with localStorage and drag reorder
+    const LS_KEY = 'simple_todos_v1';
+    let todos = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+    let filter = 'all';
+    let sortNewestFirst = true;
+
+    const listEl = document.getElementById('list');
+    const form = document.getElementById('addForm');
+    const newTitle = document.getElementById('newTitle');
+    const newDue = document.getElementById('newDue');
+    const countEl = document.getElementById('count');
+
+    function save(){
+      localStorage.setItem(LS_KEY, JSON.stringify(todos));
+    }
+
+    function formatDateISO(d){
+      if(!d) return '';
+      const dt = new Date(d);
+      if(isNaN(dt)) return '';
+      return dt.toLocaleDateString();
+    }
+
+    function render(){
+      listEl.innerHTML = '';
+      let renderList = [...todos];
+
+      // Apply sort
+      renderList.sort((a,b)=> sortNewestFirst ? b.createdAt - a.createdAt : a.createdAt - b.createdAt);
+
+      // Apply filter
+      if(filter === 'active') renderList = renderList.filter(t=>!t.completed);
+      if(filter === 'completed') renderList = renderList.filter(t=>t.completed);
+
+      if(renderList.length === 0){
+        listEl.innerHTML = '<div class="empty">No tasks here — add your first task above.</div>';
+        countEl.textContent = `${todos.length} tasks`;
+        return;
+      }
+
+      const template = document.getElementById('todoTemplate');
+
+      renderList.forEach(item => {
+        const node = template.content.firstElementChild.cloneNode(true);
+        node.dataset.id = item.id;
+        const chk = node.querySelector('.toggle');
+        const title = node.querySelector('.title');
+        const meta = node.querySelector('.meta');
+        const editBtn = node.querySelector('.editBtn');
+        const delBtn = node.querySelector('.deleteBtn');
+
+        chk.checked = !!item.completed;
+        if(item.completed) node.classList.add('completed');
+        title.textContent = item.title;
+        meta.textContent = (item.due ? 'Due: ' + formatDateISO(item.due) + ' • ' : '') + 'Added: ' + new Date(item.createdAt).toLocaleString();
+
+        // events
+        chk.addEventListener('change', ()=>{
+          item.completed = chk.checked;
+          save();
+          render();
+        });
+
+        delBtn.addEventListener('click', ()=>{
+          todos = todos.filter(t=>t.id !== item.id);
+          save(); render();
+        });
+
+        editBtn.addEventListener('click', ()=> startEdit(node, item));
+
+        // double click to edit
+        title.addEventListener('dblclick', ()=> startEdit(node, item));
+
+        // drag events for reorder
+        node.addEventListener('dragstart', dragStart);
+        node.addEventListener('dragover', dragOver);
+        node.addEventListener('drop', drop);
+        node.addEventListener('dragend', dragEnd);
+
+        listEl.appendChild(node);
+      });
+
+      countEl.textContent = `${todos.filter(t=>!t.completed).length} remaining • ${todos.length} total`;
+    }
+
+    function startEdit(node, item){
+      const content = node.querySelector('.content');
+      const titleEl = content.querySelector('.title');
+      const metaEl = content.querySelector('.meta');
+      const editInput = document.createElement('input');
+      editInput.type = 'text';
+      editInput.className = 'edit-input';
+      editInput.value = item.title;
+      editInput.setAttribute('aria-label','Edit todo');
+
+      const dueInput = document.createElement('input');
+      dueInput.type = 'date';
+      dueInput.className = 'edit-input';
+      dueInput.value = item.due || '';
+
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save'; saveBtn.className = 'btn btn-primary';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel'; cancelBtn.className = 'btn btn-ghost';
+
+      content.innerHTML = '';
+      content.appendChild(editInput);
+      content.appendChild(dueInput);
+      const actions = document.createElement('div'); actions.style.marginTop = '8px'; actions.style.display='flex'; actions.style.gap='8px';
+      actions.appendChild(saveBtn); actions.appendChild(cancelBtn);
+      content.appendChild(actions);
+
+      saveBtn.addEventListener('click', ()=>{
+        const v = editInput.value.trim();
+        if(!v) return alert('Title required');
+        item.title = v; item.due = dueInput.value || null;
+        save(); render();
+      });
+      cancelBtn.addEventListener('click', ()=> render());
+
+      // keyboard save on Enter
+      editInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ saveBtn.click(); } if(e.key==='Escape') cancelBtn.click(); });
+    }
+
+    // Drag & drop helpers
+    let dragSrcEl = null;
+    function dragStart(e){
+      dragSrcEl = this; this.style.opacity = '0.5';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.id);
+    }
+    function dragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    function drop(e){ e.preventDefault(); const srcId = e.dataTransfer.getData('text/plain'); const targetId = this.dataset.id; if(!srcId || !targetId || srcId===targetId) return;
+      const srcIndex = todos.findIndex(t=>t.id===srcId);
+      const targetIndex = todos.findIndex(t=>t.id===targetId);
+      if(srcIndex < 0 || targetIndex < 0) return;
+      const [moved] = todos.splice(srcIndex,1);
+      todos.splice(targetIndex,0,moved);
+      save(); render();
+    }
+    function dragEnd(){ this.style.opacity = ''; }
+
+    // form submit
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const title = newTitle.value.trim();
+      if(!title) { newTitle.focus(); return; }
+      const item = { id: cryptoRandomId(), title, due: newDue.value || null, completed: false, createdAt: Date.now() };
+      todos.unshift(item);
+      save(); render();
+      form.reset(); newTitle.focus();
+    });
+
+    function cryptoRandomId(){
+      // fallback if crypto not available
+      try{ return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
+      catch(e){ return 'id-'+Math.random().toString(36).slice(2,9); }
+    }
+
+    // filters
+    document.querySelectorAll('.filter-btn').forEach(b=> b.addEventListener('click', ()=>{
+      document.querySelectorAll('.filter-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); filter = b.dataset.filter; render();
+    }));
+
+    document.getElementById('clearCompleted').addEventListener('click', ()=>{
+      todos = todos.filter(t=>!t.completed); save(); render();
+    });
+
+    document.getElementById('sortBtn').addEventListener('click', ()=>{ sortNewestFirst = !sortNewestFirst; render(); });
+
+    // initial render
+    render();
+
+    // expose for debug (optional)
+    window._todos = todos;
+  </script>
+</body>
+</html>
